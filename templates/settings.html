@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PiDash — Settings</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body class="p-4 sm:p-6 lg:p-8">
+  <div class="max-w-4xl mx-auto">
+    <header class="mb-6">
+      <h1 class="text-3xl font-bold">Settings</h1>
+      <p class="text-gray-400 mt-1">Edit Quick Links and file storage settings (admin only)</p>
+    </header>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="mb-4">
+          <ul>
+            {% for category, message in messages %}
+              <li class="{{ category }}">{{ message }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <form method="post" class="space-y-6 bg-gray-800 p-6 rounded-lg shadow">
+      <div>
+        <label class="block text-sm font-medium text-gray-200">Quick Links</label>
+        <p class="text-sm text-gray-400">Enter one per line in the format: <code>Name|URL|icon</code></p>
+        <div class="mt-2 space-y-3">
+          {% for link in quick_links %}
+            <div class="flex items-center gap-3">
+              <i data-lucide="{{ link.icon }}" class="w-6 h-6 text-blue-400"></i>
+              <span class="w-40 text-gray-200">{{ link.name }}</span>
+              <input name="link_{{ loop.index0 }}_url" class="flex-1 p-2 rounded bg-gray-900 text-gray-100" value="{{ link.url }}" />
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-200">Upload Folder</label>
+        <p class="text-sm text-gray-400">Folder where shared files will be stored (absolute or relative path). Will be created if it doesn't exist.</p>
+        <input name="upload_folder" class="mt-2 w-full p-3 rounded bg-gray-900 text-gray-100" value="{{ upload_folder }}" />
+      </div>
+
+
+
+      <div class="flex items-center justify-end">
+        <button type="submit" class="px-4 py-2 bg-blue-600 rounded text-white">Save settings</button>
+      </div>
+    </form>
+  </div>
+</body>
+</html>

@@ -1,0 +1,29 @@
+{
+  "quick_links": [
+    {
+      "name": "Router Admin",
+      "url": "http://192.168.1.1/",
+      "icon": "router"
+    },
+    {
+      "name": "File Manager",
+      "url": "/file-manager",
+      "icon": "folder"
+    },
+    {
+      "name": "Google",
+      "url": "https://google.com",
+      "icon": "search"
+    },
+    {
+      "name": "YouTube",
+      "url": "https://youtube.com",
+      "icon": "youtube"
+    },
+    {
+      "name": "GitHub",
+      "url": "https://github.com/Aditya190803",
+      "icon": "github"
+    }
+  ]
+}

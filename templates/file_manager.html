@@ -1,0 +1,1011 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Manager - PiDash</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <style>
+        :root{
+            --bg:#0b1220;
+            --card:#1F2937;
+            --muted:#9CA3AF;
+            --border:#374151;
+            --accent:#3b82f6;
+        }
+        body{background-color:var(--bg);color:#E5E7EB}
+        .card{background-color:var(--card);border:1px solid var(--border);border-radius:.75rem}
+        .file-icon{width:24px;height:24px;opacity:0.8}
+        .file-row:hover{background-color:#111827}
+        .breadcrumb-item:not(:last-child):after{content:"/";margin:0 8px;color:var(--muted)}
+        .monaco-editor{height:500px;border:1px solid var(--border);border-radius:.5rem}
+        .file-preview{max-height:60vh;overflow:auto}
+        .search-highlight{background-color:#f59e0b;color:#000;font-weight:bold}
+        /* Simple spinner */
+        .loader { border-top-color: var(--accent); animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+    <!-- Monaco Editor for file editing -->
+    <script src="https://unpkg.com/monaco-editor@0.47.0/min/vs/loader.js"></script>
+</head>
+<body class="p-4 sm:p-6 lg:p-8">
+    <div class="max-w-full mx-auto">
+        <!-- Header -->
+        <header class="mb-6 flex items-center justify-between">
+            <div>
+                <h1 class="text-3xl sm:text-4xl font-bold text-white">File Manager</h1>
+                <p class="text-gray-400 mt-2">Browse and manage files on your Pi</p>
+            </div>
+            <div class="flex items-center gap-4">
+                <a href="/" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700">
+                    <i data-lucide="home" class="w-5 h-5 mr-2"></i>
+                    Dashboard
+                </a>
+            </div>
+        </header>
+
+        <!-- Flash Messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="mb-4 p-4 rounded-lg {{ 'bg-green-100 text-green-800' if category == 'success' else 'bg-red-100 text-red-800' }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <!-- Toolbar -->
+        <div class="card p-4 mb-6">
+            <div class="flex flex-col sm:flex-row gap-4 items-center justify-between">
+                <!-- Breadcrumb -->
+                <div class="flex items-center gap-2 text-sm text-gray-400 overflow-x-auto">
+                    <a href="/file-manager" class="hover:text-white">Home</a>
+                    {% if current_path %}
+                        {% for part in current_path.split('/') %}
+                            {% if part %}
+                                <span>/</span>
+                                <a href="/file-manager/{{ loop.index0 == 0 and part or current_path.split('/')[:loop.index]|join('/') }}" class="hover:text-white">{{ part }}</a>
+                            {% endif %}
+                        {% endfor %}
+                    {% endif %}
+                </div>
+
+                <!-- Search and Actions -->
+                <div class="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
+                    <div class="relative flex-grow">
+                        <input type="text" id="search-input" placeholder="Search files..." class="w-full pl-10 pr-4 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <i data-lucide="search" class="absolute left-3 top-2.5 text-gray-400"></i>
+                    </div>
+                    <div class="flex gap-2 items-center">
+                        <button id="grid-view" class="p-2 bg-gray-700 hover:bg-gray-600 rounded-lg border border-gray-600">
+                            <i data-lucide="grid" class="w-5 h-5"></i>
+                        </button>
+                        <button id="list-view" class="p-2 bg-gray-700 hover:bg-gray-600 rounded-lg border border-gray-600">
+                            <i data-lucide="list" class="w-5 h-5"></i>
+                        </button>
+                        <button id="upload-btn" class="flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg border border-transparent">
+                            <i data-lucide="upload" class="w-5 h-5 mr-2"></i>
+                            Upload
+                        </button>
+                        <button id="move-selected-btn" class="flex items-center px-3 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg border border-transparent" disabled>
+                            <i data-lucide="corner-up-right" class="w-4 h-4 mr-2"></i>
+                            Move Selected
+                        </button>
+                        <button id="delete-selected-btn" class="flex items-center px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg border border-transparent" disabled>
+                            <i data-lucide="trash-2" class="w-4 h-4 mr-2"></i>
+                            Delete Selected
+                        </button>
+                        <!-- New File removed per request; only allow creating folders -->
+                        <button id="new-folder-btn" class="flex items-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg border border-transparent">
+                            <i data-lucide="folder-plus" class="w-5 h-5 mr-2"></i>
+                            New Folder
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+<!-- File List -->
+<div id="loading-overlay" class="hidden fixed inset-0 bg-black bg-opacity-40 z-40 flex items-center justify-center">
+    <div class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-12 w-12"></div>
+</div>
+<div class="card">
+    <!-- List View -->
+    <div id="list-view-container" class="overflow-x-auto">
+        <table class="w-full">
+            <thead class="bg-gray-800">
+                <tr>
+                    <th class="px-4 py-3 text-left">
+                        <input type="checkbox" id="select-all" class="mr-2">
+                        Name
+                    </th>
+                    <th class="px-4 py-3 text-left">Type</th>
+                    <th class="px-4 py-3 text-left">Size</th>
+                    <th class="px-4 py-3 text-left">Modified</th>
+                    <th class="px-4 py-3 text-left">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="file-list" class="divide-y divide-gray-700">
+                {% for entry in entries %}
+                <tr class="file-row hover:bg-gray-700">
+                    <td class="px-4 py-3">
+                        <input type="checkbox" name="file-select" value="{{ entry.path }}" class="mr-3">
+                        <i data-lucide="{{ 'folder' if entry.is_dir else 'file-text' }}" class="file-icon mr-3 inline"></i>
+                        <span class="font-medium">{{ entry.name }}</span>
+                    </td>
+                    <td class="px-4 py-3 text-gray-400">
+                        {{ 'Directory' if entry.is_dir else 'File' }}
+                    </td>
+                    <td class="px-4 py-3 text-gray-400">
+                        {% if entry.is_dir %}
+                            <span class="text-green-400">-</span>
+                        {% else %}
+                            {{ entry.size | filesizeformat }}
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3 text-gray-400">
+                        {{ entry.mtime | timestamp_to_date }}
+                    </td>
+                    <td class="px-4 py-3">
+                        {% if entry.is_dir %}
+                            <a href="/file-manager?path={{ entry.path }}" class="inline-flex items-center px-3 py-1.5 border border-gray-600 text-sm font-medium rounded-md text-gray-300 bg-gray-700 hover:bg-gray-600 mr-2">
+                                <i data-lucide="folder" class="w-4 h-4 mr-2"></i>
+                                Open
+                            </a>
+                            <button onclick="moveItem('{{ entry.name }}')" class="inline-flex items-center px-3 py-1.5 border border-gray-600 text-sm font-medium rounded-md text-gray-300 bg-yellow-600 hover:bg-yellow-700 mr-2">
+                                <i data-lucide="corner-up-right" class="w-4 h-4 mr-2"></i>
+                                Move
+                            </button>
+                            <button onclick="deleteFile('{{ entry.name }}', true)" class="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700">
+                                <i data-lucide="trash-2" class="w-4 h-4 mr-2"></i>
+                                Delete
+                            </button>
+                        {% else %}
+                            <button onclick="openFile('{{ entry.name }}')" class="inline-flex items-center px-3 py-1.5 border border-gray-600 text-sm font-medium rounded-md text-gray-300 bg-gray-700 hover:bg-gray-600 mr-2">
+                                <i data-lucide="eye" class="w-4 h-4 mr-2"></i>
+                                Preview
+                            </button>
+                            <a href="/open/{{ entry.path }}" target="_blank" class="inline-flex items-center px-3 py-1.5 border border-gray-600 text-sm font-medium rounded-md text-gray-300 bg-gray-700 hover:bg-gray-600 mr-2">
+                                <i data-lucide="external-link" class="w-4 h-4 mr-2"></i>
+                                Open
+                            </a>
+                            <a href="/download/{{ entry.path }}" class="inline-flex items-center px-3 py-1.5 border border-gray-600 text-sm font-medium rounded-md text-gray-300 bg-gray-700 hover:bg-gray-600 mr-2">
+                                <i data-lucide="download" class="w-4 h-4 mr-2"></i>
+                                Download
+                            </a>
+                            <button onclick="moveItem('{{ entry.name }}')" class="inline-flex items-center px-3 py-1.5 border border-gray-600 text-sm font-medium rounded-md text-gray-300 bg-yellow-600 hover:bg-yellow-700 mr-2">
+                                <i data-lucide="corner-up-right" class="w-4 h-4 mr-2"></i>
+                                Move
+                            </button>
+                            <button onclick="deleteFile('{{ entry.name }}', false)" class="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700">
+                                <i data-lucide="trash-2" class="w-4 h-4 mr-2"></i>
+                                Delete
+                            </button>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Grid View -->
+    <div id="grid-view-container" class="hidden p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+        {% for entry in entries %}
+        <div class="bg-gray-700 rounded-lg p-4 hover:bg-gray-600 transition-colors">
+            <div class="flex flex-col items-center text-center">
+                <i data-lucide="{{ 'folder' if entry.is_dir else 'file-text' }}" class="file-icon mb-2"></i>
+                <span class="font-medium text-sm mb-2 truncate w-full">{{ entry.name }}</span>
+                <div class="text-xs text-gray-400 mb-3">
+                    {{ 'Directory' if entry.is_dir else 'File' }}
+                    {% if not entry.is_dir %}
+                        <br>{{ entry.size | filesizeformat }}
+                    {% endif %}
+                </div>
+                {% if entry.is_dir %}
+                    <div class="flex gap-1 w-full">
+                        <a href="/file-manager?path={{ entry.path }}" class="flex-1">
+                            <button class="w-full px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs">
+                                <i data-lucide="folder" class="w-3 h-3 inline mr-1"></i>
+                                Open
+                            </button>
+                        </a>
+                        <button onclick="moveItem('{{ entry.name }}')" class="flex-1 px-2 py-1 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-xs">
+                            <i data-lucide="corner-up-right" class="w-3 h-3 inline mr-1"></i>
+                            Move
+                        </button>
+                    </div>
+                    <button onclick="deleteFile('{{ entry.name }}', true)" class="w-full mt-2 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm">
+                        <i data-lucide="trash-2" class="w-4 h-4 inline mr-1"></i>
+                        Delete Folder
+                    </button>
+                {% else %}
+                    <div class="flex gap-1 w-full">
+                        <button onclick="openFile('{{ entry.name }}')" class="flex-1 px-2 py-1 bg-gray-600 hover:bg-gray-500 text-white rounded text-xs">
+                            <i data-lucide="eye" class="w-3 h-3 inline mr-1"></i>
+                            Preview
+                        </button>
+                        <a href="/download/{{ entry.path }}" class="flex-1 px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs">
+                            <i data-lucide="download" class="w-3 h-3 inline mr-1"></i>
+                            Download
+                        </a>
+                    </div>
+                    <div class="flex gap-1 mt-2">
+                        <button onclick="moveItem('{{ entry.name }}')" class="flex-1 px-2 py-1 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-xs">
+                            <i data-lucide="corner-up-right" class="w-3 h-3 inline mr-1"></i>
+                            Move
+                        </button>
+                        <button onclick="deleteFile('{{ entry.name }}', false)" class="flex-1 px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-xs">
+                            <i data-lucide="trash-2" class="w-4 h-4 inline mr-1"></i>
+                            Delete
+                        </button>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+    </div>
+
+    <!-- Upload Modal -->
+    <div id="upload-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+        <div class="bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-md">
+            <h3 class="text-lg font-semibold mb-4">Upload Files</h3>
+            <form id="upload-form" enctype="multipart/form-data">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="mb-4">
+                    <div id="drop-zone" class="w-full p-6 border-2 border-dashed border-gray-600 rounded-lg text-center text-gray-400">
+                        Drag & drop files here or <label for="file-input" class="text-blue-400 underline cursor-pointer">browse</label>
+                        <input type="file" id="file-input" name="file" multiple class="hidden" accept=".txt,.pdf,.png,.jpg,.jpeg,.gif,.zip,.py,.sh,.js,.html,.css,.json,.xml,.md">
+                    </div>
+                    <ul id="selected-files" class="mt-2 text-sm text-gray-200"></ul>
+                    <div id="upload-progress" class="mt-3 hidden">
+                        <div class="w-full bg-gray-700 rounded-full h-2 overflow-hidden progress-bg"><div id="upload-progress-bar" class="bg-green-600 h-2 w-0"></div></div>
+                        <div id="upload-status" class="text-xs text-gray-400 mt-2"></div>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-2">
+                    <button type="button" id="cancel-upload" class="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded">Cancel</button>
+                    <button type="submit" id="start-upload" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded">Upload</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- File Editor Modal -->
+    <div id="editor-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+        <div class="bg-gray-900 w-full h-full flex flex-col">
+            <div class="flex items-center justify-between p-4 border-b border-gray-700">
+                <h3 id="editor-filename" class="text-lg font-semibold">File Editor</h3>
+                <div class="flex gap-2">
+                    <button id="save-file" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded">Save</button>
+                    <button id="close-editor" class="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded">Close</button>
+                </div>
+            </div>
+            <div id="editor-container" class="flex-grow"></div>
+        </div>
+    </div>
+
+    <!-- File Preview Modal -->
+    <div id="preview-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+        <div class="bg-gray-800 w-full max-w-4xl max-h-screen flex flex-col">
+            <div class="flex items-center justify-between p-4 border-b border-gray-700">
+                <h3 id="preview-filename" class="text-lg font-semibold">File Preview</h3>
+                <button id="close-preview" class="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded">Close</button>
+            </div>
+            <div id="preview-content" class="flex-grow p-4 overflow-auto"></div>
+        </div>
+    </div>
+
+    <!-- New File/Folder Modal -->
+    <div id="new-item-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+        <div class="bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-md">
+            <h3 id="new-item-title" class="text-lg font-semibold mb-4">Create New Folder</h3>
+            <form id="new-item-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" id="new-item-type" name="type" value="folder">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2">Name</label>
+                    <input type="text" id="new-item-name" name="name" class="w-full px-3 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                    <p id="new-name-error" class="text-xs text-red-400 hidden mt-1">Folder name is invalid (no slashes; use letters, numbers, dashes or underscores).</p>
+                </div>
+                <div class="flex justify-end gap-2">
+                    <button type="button" id="cancel-new-item" class="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded">Cancel</button>
+                    <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded">Create</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Move Modal (added) -->
+    <div id="move-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+        <div class="bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-md">
+            <h3 class="text-lg font-semibold mb-4">Move Items</h3>
+            <form id="move-form">
+                <div class="mb-3">
+                    <label class="block text-sm text-gray-300 mb-2">Destination path (relative to storage root)</label>
+                    <input id="move-dest-input" type="text" class="w-full px-3 py-2 bg-gray-700 text-white rounded-lg border border-gray-600" placeholder="e.g., folder/subfolder" />
+                    <small class="text-xs text-gray-400">You can type a path or choose an existing folder from the list.</small>
+                </div>
+                <div class="mb-3">
+                    <label class="block text-sm text-gray-300 mb-2">Existing folders (current view)</label>
+                    <select id="move-dest-select" class="w-full px-3 py-2 bg-gray-700 text-white rounded-lg border border-gray-600"></select>
+                </div>
+                <div class="flex justify-end gap-2">
+                    <button type="button" id="cancel-move" class="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded">Cancel</button>
+                    <button type="submit" id="confirm-move" class="px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded">Move</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        lucide.createIcons();
+
+        // State management
+        let currentPath = '{{ current_path or "" }}';
+        let viewMode = 'list'; // 'list' or 'grid'
+        let files = [];
+        let editorInstance = null;
+
+        // DOM Elements
+        const fileList = document.getElementById('file-list');
+        const gridViewContainer = document.getElementById('grid-view-container');
+        const listViewContainer = document.getElementById('list-view-container');
+        const searchInput = document.getElementById('search-input');
+        const selectAllCheckbox = document.getElementById('select-all');
+        const uploadModal = document.getElementById('upload-modal');
+        const editorModal = document.getElementById('editor-modal');
+        const previewModal = document.getElementById('preview-modal');
+        const newItemModal = document.getElementById('new-item-modal');
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            loadFiles();
+            
+            // Event listeners
+            document.getElementById('grid-view').addEventListener('click', () => switchView('grid'));
+            document.getElementById('list-view').addEventListener('click', () => switchView('list'));
+            document.getElementById('upload-btn').addEventListener('click', () => uploadModal.classList.remove('hidden'));
+            document.getElementById('cancel-upload').addEventListener('click', () => uploadModal.classList.add('hidden'));
+            document.getElementById('new-folder-btn').addEventListener('click', () => showNewItemModal('folder'));
+            document.getElementById('cancel-new-item').addEventListener('click', () => newItemModal.classList.add('hidden'));
+            document.getElementById('close-editor').addEventListener('click', () => closeEditor());
+            document.getElementById('close-preview').addEventListener('click', () => previewModal.classList.add('hidden'));
+            document.getElementById('move-selected-btn').addEventListener('click', () => showMoveModalForSelection());
+            document.getElementById('delete-selected-btn').addEventListener('click', () => batchDeleteSelected());
+            document.getElementById('cancel-move').addEventListener('click', () => document.getElementById('move-modal').classList.add('hidden'));
+            document.getElementById('move-form').addEventListener('submit', handleMoveSubmit);
+            
+            searchInput.addEventListener('input', filterFiles);
+            selectAllCheckbox.addEventListener('change', (e) => { toggleSelectAll(); updateBatchButtons(); });
+
+            // Upload form
+            document.getElementById('upload-form').addEventListener('submit', handleUpload);
+            document.getElementById('file-input').addEventListener('change', handleFileInputChange);
+            const dropZone = document.getElementById('drop-zone');
+            dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('bg-gray-600'); });
+            dropZone.addEventListener('dragleave', (e) => { e.preventDefault(); dropZone.classList.remove('bg-gray-600'); });
+            dropZone.addEventListener('drop', (e) => { e.preventDefault(); dropZone.classList.remove('bg-gray-600'); const dt = e.dataTransfer; if (dt && dt.files) { document.getElementById('file-input').files = dt.files; handleFileInputChange(); } });
+            
+            // New item form (folders only)
+            document.getElementById('new-item-form').addEventListener('submit', handleNewItem);
+            document.getElementById('new-item-name').addEventListener('input', validateNewItemName);
+            updateBatchButtons();
+        });
+
+        // File operations
+        function showLoading() { document.getElementById('loading-overlay').classList.remove('hidden'); }
+        function hideLoading() { document.getElementById('loading-overlay').classList.add('hidden'); }
+
+        async function loadFiles() {
+            try {
+                showLoading();
+                const response = await fetch(`/api/files?path=${encodeURIComponent(currentPath)}`);
+                if (!response.ok) {
+                    throw new Error('Failed to load files');
+                }
+                const data = await response.json();
+                files = data.entries || [];
+                renderFiles();
+                console.log('Files loaded for path:', currentPath);
+            } catch (error) {
+                console.error('Error loading files:', error);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        function switchView(mode) {
+            viewMode = mode;
+            document.getElementById('list-view').classList.toggle('bg-blue-600', mode === 'list');
+            document.getElementById('grid-view').classList.toggle('bg-blue-600', mode === 'grid');
+            
+            if (mode === 'list') {
+                listViewContainer.classList.remove('hidden');
+                gridViewContainer.classList.add('hidden');
+            } else {
+                listViewContainer.classList.add('hidden');
+                gridViewContainer.classList.remove('hidden');
+            }
+        }
+
+        function filterFiles() {
+            const query = searchInput.value.toLowerCase();
+            // Filter and highlight files based on search query
+            console.log('Filtering files with query:', query);
+        }
+
+        function toggleSelectAll() {
+            const checkboxes = document.querySelectorAll('input[type="checkbox"][name="file-select"]');
+            checkboxes.forEach(cb => cb.checked = selectAllCheckbox.checked);
+        }
+
+        async function handleFileInputChange() {
+            const list = document.getElementById('selected-files');
+            const input = document.getElementById('file-input');
+            list.innerHTML = '';
+            for (let i = 0; i < input.files.length; i++) {
+                const li = document.createElement('li');
+                li.textContent = input.files[i].name + ' (' + formatSize(input.files[i].size) + ')';
+                list.appendChild(li);
+            }
+        }
+
+        async function handleUpload(e) {
+            e.preventDefault();
+            const filesInput = document.getElementById('file-input');
+            if (!filesInput.files || filesInput.files.length === 0) {
+                showError('No files selected');
+                return;
+            }
+
+            const progressBar = document.getElementById('upload-progress-bar');
+            const progressWrap = document.getElementById('upload-progress');
+            const status = document.getElementById('upload-status');
+            showLoading();
+            progressWrap.classList.remove('hidden');
+            progressBar.style.width = '0%';
+            status.textContent = 'Uploading...';
+
+            // Upload files sequentially to keep progress simple
+            let uploaded = 0;
+            for (let i = 0; i < filesInput.files.length; i++) {
+                const file = filesInput.files[i];
+                const fd = new FormData();
+                fd.append('file', file);
+                fd.append('path', currentPath);
+
+                await new Promise((resolve, reject) => {
+                    const xhr = new XMLHttpRequest();
+                    xhr.open('POST', '/api/upload');
+                    xhr.setRequestHeader('X-CSRFToken', document.querySelector('input[name="csrf_token"]').value);
+                    xhr.upload.onprogress = (evt) => {
+                        if (evt.lengthComputable) {
+                            const percent = Math.round((evt.loaded / evt.total) * 100);
+                            progressBar.style.width = Math.round(((uploaded + percent/100) / filesInput.files.length) * 100) + '%';
+                        }
+                    };
+                    xhr.onload = () => {
+                        if (xhr.status >= 200 && xhr.status < 300) {
+                            uploaded += 1;
+                            resolve();
+                        } else {
+                            reject(new Error('Upload failed'));
+                        }
+                    };
+                    xhr.onerror = () => reject(new Error('Upload failed'));
+                    xhr.send(fd);
+                }).catch(err => {
+                    status.textContent = 'Upload failed';
+                    showError('Upload failed');
+                    hideLoading();
+                    return;
+                });
+            }
+
+            progressBar.style.width = '100%';
+            status.textContent = 'Finished';
+            showSuccess('Files uploaded successfully');
+            uploadModal.classList.add('hidden');
+            // clear file input
+            document.getElementById('file-input').value = null;
+            document.getElementById('selected-files').innerHTML = '';
+            hideLoading();
+            loadFiles();
+        }
+
+        function showNewItemModal(type) {
+            document.getElementById('new-item-type').value = type;
+            document.getElementById('new-item-title').textContent = type === 'file' ? 'Create New File' : 'Create New Folder';
+            document.getElementById('new-item-name').placeholder = type === 'file' ? 'filename.txt' : 'foldername';
+            document.getElementById('new-item-name').value = '';
+            validateNewItemName();
+            newItemModal.classList.remove('hidden');
+        }
+
+        async function handleNewItem(e) {
+            e.preventDefault();
+            const name = document.getElementById('new-item-name').value;
+            const payload = {
+                path: currentPath,
+                type: document.getElementById('new-item-type').value,
+                name: name
+            };
+
+            try {
+                const response = await fetch('/api/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (response.ok) {
+                    showSuccess('Item created successfully');
+                    newItemModal.classList.add('hidden');
+                    loadFiles();
+                } else {
+                    showError('Creation failed');
+                }
+            } catch (error) {
+                console.error('Creation error:', error);
+                showError('Creation failed');
+            }
+        }
+
+        // File actions
+        async function openFile(filename) {
+            const fullPath = currentPath ? `${currentPath}/${filename}` : filename;
+            try {
+                const response = await fetch(`/api/file/${encodeURIComponent(fullPath)}`);
+                const data = await response.json();
+                
+                if (data.type === 'text' || data.type === 'code') {
+                    openEditor(filename, data.content, data.language);
+                } else if (data.type === 'image') {
+                    openPreview(filename, `<img src="/api/file/${encodeURIComponent(fullPath)}" class="max-w-full h-auto">`);
+                } else if (data.type === 'pdf') {
+                    openPreview(filename, `<embed src="/api/file/${encodeURIComponent(fullPath)}" type="application/pdf" width="100%" height="600px">`);
+                } else {
+                    // Download for other types
+                    window.open(`/download/${encodeURIComponent(fullPath)}`, '_blank');
+                }
+            } catch (error) {
+                console.error('Error opening file:', error);
+                showError('Error opening file');
+            }
+        }
+
+        async function openEditor(filename, content, language) {
+            document.getElementById('editor-filename').textContent = `Editing: ${filename}`;
+            editorModal.classList.remove('hidden');
+            
+            if (editorInstance) {
+                editorInstance.dispose();
+            }
+
+            require.config({ paths: { 'vs': 'https://unpkg.com/monaco-editor@0.47.0/min/vs' }});
+            require(['vs/editor/editor.main'], function() {
+                editorInstance = monaco.editor.create(document.getElementById('editor-container'), {
+                    value: content || '',
+                    language: language || 'plaintext',
+                    theme: 'vs-dark',
+                    minimap: { enabled: true },
+                    fontSize: 14,
+                    lineNumbers: 'on',
+                    scrollBeyondLastLine: false,
+                    automaticLayout: true
+                });
+
+                window.saveFileContent = function() {
+                    const newContent = editorInstance.getValue();
+                    saveFile(filename, newContent);
+                };
+            });
+        }
+
+        function closeEditor() {
+            if (editorInstance) {
+                editorInstance.dispose();
+                editorInstance = null;
+            }
+            editorModal.classList.add('hidden');
+        }
+
+        function openPreview(filename, content) {
+            document.getElementById('preview-filename').textContent = `Preview: ${filename}`;
+            document.getElementById('preview-content').innerHTML = content;
+            previewModal.classList.remove('hidden');
+        }
+
+        async function saveFile(filename, content) {
+            const fullPath = currentPath ? `${currentPath}/${filename}` : filename;
+            try {
+                const response = await fetch('/api/save', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': document.querySelector('input[name="csrf_token"]').value
+                    },
+                    body: JSON.stringify({
+                        path: fullPath,
+                        content: content
+                    })
+                });
+                
+                const result = await response.json();
+                if (response.ok) {
+                    showSuccess(result.message || 'File saved successfully');
+                } else {
+                    showError(result.error || 'Save failed');
+                }
+            } catch (error) {
+                console.error('Save error:', error);
+                showError('Save failed');
+            }
+        }
+
+        async function deleteFile(filename, isDir) {
+            // If isDir is not provided, detect based on loaded files
+            if (typeof isDir === 'undefined') {
+                const found = files.find(f => f.name === filename);
+                isDir = found ? !!found.is_dir : false;
+            }
+
+            let confirmMsg = isDir ? `Delete folder "${filename}" and all its contents?` : `Are you sure you want to delete ${filename}?`;
+            if (!confirm(confirmMsg)) return;
+
+            const fullPath = currentPath ? `${currentPath}/${filename}` : filename;
+            try {
+                showLoading();
+                const payload = { path: fullPath };
+                if (isDir) payload.recursive = true;
+
+                const response = await fetch('/api/delete', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': document.querySelector('input[name="csrf_token"]').value
+                    },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (response.ok) {
+                    showSuccess(isDir ? 'Folder deleted' : 'File deleted successfully');
+                    loadFiles();
+                } else {
+                    const json = await response.json().catch(() => ({}));
+                    showError(json.error || 'Delete failed');
+                }
+            } catch (error) {
+                console.error('Delete error:', error);
+                showError('Delete failed');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        async function renameFile(oldName, newName) {
+            const oldPath = currentPath ? `${currentPath}/${oldName}` : oldName;
+            // Allow newName to contain slashes to move across directories
+            const newPath = currentPath && !newName.includes('/') ? `${currentPath}/${newName}` : newName;
+            try {
+                const response = await fetch('/api/rename', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': document.querySelector('input[name="csrf_token"]').value
+                    },
+                    body: JSON.stringify({
+                        old_path: oldPath,
+                        new_path: newPath
+                    })
+                });
+                
+                if (response.ok) {
+                    return {ok: true};
+                } else {
+                    const json = await response.json().catch(() => ({}));
+                    return {ok: false, error: json.error || 'Rename failed'};
+                }
+            } catch (error) {
+                console.error('Rename error:', error);
+                return {ok: false, error: 'Rename failed'};
+            }
+        }
+
+        function moveItem(name) {
+            // Open move modal for a single item
+            showMoveModal([name]);
+        }
+
+        function getSelectedItems() {
+            const sel = Array.from(document.querySelectorAll('input[name="file-select"]:checked'));
+            return sel.map(s => {
+                const p = s.value;
+                const nameSpan = s.parentElement ? s.parentElement.querySelector('span') : null;
+                const name = nameSpan ? nameSpan.textContent.trim() : null;
+                const f = files.find(x => x.path === p || x.name === name);
+                return f || {name: name || p, path: p, is_dir: false};
+            });
+        }
+
+        function updateBatchButtons() {
+            const selected = getSelectedItems();
+            const moveBtn = document.getElementById('move-selected-btn');
+            const delBtn = document.getElementById('delete-selected-btn');
+            moveBtn.disabled = selected.length === 0;
+            delBtn.disabled = selected.length === 0;
+        }
+
+        // Listen for checkbox changes (delegated)
+        document.addEventListener('change', (e) => {
+            if (e.target && e.target.name === 'file-select') {
+                updateBatchButtons();
+            }
+        });
+
+        // Validate new folder name: no slashes, not empty, reasonable chars
+        function validateNewItemName() {
+            const input = document.getElementById('new-item-name');
+            const err = document.getElementById('new-name-error');
+            const btn = document.querySelector('#new-item-form button[type="submit"]');
+            const name = (input.value || '').trim();
+            const valid = name.length > 0 && !name.includes('/') && /^[\w.\- ]+$/.test(name);
+            if (!valid) {
+                err.classList.remove('hidden');
+            } else {
+                err.classList.add('hidden');
+            }
+            if (btn) btn.disabled = !valid;
+        }
+
+        function showMoveModalForSelection() {
+            const selected = getSelectedItems();
+            if (selected.length === 0) return alert('No items selected');
+            showMoveModal(selected.map(s => s.name));
+        }
+
+        function showMoveModal(names) {
+            // Populate candidate folders in select
+            const sel = document.getElementById('move-dest-select');
+            sel.innerHTML = '';
+            // Add root and current path
+            const optRoot = document.createElement('option'); optRoot.value = ''; optRoot.textContent = '/ (root)'; sel.appendChild(optRoot);
+            const optCurrent = document.createElement('option'); optCurrent.value = currentPath; optCurrent.textContent = currentPath || '.'; sel.appendChild(optCurrent);
+            files.filter(f => f.is_dir).forEach(f => { const o = document.createElement('option'); o.value = f.path; o.textContent = f.path; sel.appendChild(o); });
+
+            document.getElementById('move-dest-input').value = '';
+            document.getElementById('move-modal').classList.remove('hidden');
+            // store selection as data on the form
+            document.getElementById('move-form').dataset.items = JSON.stringify(names);
+        }
+
+        async function handleMoveSubmit(e) {
+            e.preventDefault();
+            const names = JSON.parse(document.getElementById('move-form').dataset.items || '[]');
+            const destInput = document.getElementById('move-dest-input').value.trim();
+            const destSelect = document.getElementById('move-dest-select').value;
+            const dest = destInput || destSelect || '';
+            const isDirectoryTarget = dest === '' || dest.endsWith('/') || files.some(f => f.is_dir && f.path === dest);
+
+            // Move items sequentially
+            for (let i = 0; i < names.length; i++) {
+                const name = names[i];
+                let newPath;
+                if (isDirectoryTarget) {
+                    newPath = dest ? `${dest}/${name}` : name;
+                } else {
+                    // treat dest as filename only when single item and dest doesn't look like dir
+                    if (names.length === 1) newPath = dest;
+                    else newPath = dest ? `${dest}/${name}` : name;
+                }
+                const res = await renameFile(name, newPath);
+                if (!res.ok) showError(`Move failed for ${name}: ${res.error}`);
+            }
+            document.getElementById('move-modal').classList.add('hidden');
+            loadFiles();
+        }
+
+        async function batchDeleteSelected() {
+            const items = getSelectedItems();
+            if (items.length === 0) return;
+            const confirmMsg = `Delete ${items.length} item(s)? This will delete folders recursively.`;
+            if (!confirm(confirmMsg)) return;
+            // show overlay
+            document.getElementById('loading-overlay').classList.remove('hidden');
+            for (let i = 0; i < items.length; i++) {
+                const it = items[i];
+                try {
+                    const resp = await fetch('/api/delete', { method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('input[name="csrf_token"]').value }, body: JSON.stringify({ path: it.path, recursive: it.is_dir }) });
+                    if (!resp.ok) {
+                        const j = await resp.json().catch(() => ({}));
+                        showError(j.error || 'Delete failed');
+                    }
+                } catch (e) {
+                    showError('Delete failed');
+                }
+            }
+            document.getElementById('loading-overlay').classList.add('hidden');
+            loadFiles();
+        }
+
+        // Utility functions
+        function showSuccess(message) {
+            const div = document.createElement('div');
+            div.className = 'fixed top-4 right-4 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg z-50';
+            div.textContent = message;
+            document.body.appendChild(div);
+            setTimeout(() => div.remove(), 3000);
+        }
+
+        function showError(message) {
+            const div = document.createElement('div');
+            div.className = 'fixed top-4 right-4 bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg z-50';
+            div.textContent = message;
+            document.body.appendChild(div);
+            setTimeout(() => div.remove(), 3000);
+        }
+
+        // File rendering functions
+        function renderFiles() {
+            const tbody = document.getElementById('file-list');
+            const grid = document.getElementById('grid-view-container');
+
+            // Build table rows
+            tbody.innerHTML = '';
+            files.forEach(entry => {
+                const tr = document.createElement('tr');
+                tr.className = 'file-row hover:bg-gray-700';
+
+                const checkboxTd = document.createElement('td');
+                checkboxTd.className = 'px-4 py-3';
+                checkboxTd.innerHTML = `<input type="checkbox" name="file-select" value="${entry.path}" class="mr-3">
+                    <i data-lucide="${entry.is_dir ? 'folder' : 'file-text'}" class="file-icon mr-3 inline"></i>
+                    <span class="font-medium">${entry.name}</span>`;
+
+                const typeTd = document.createElement('td');
+                typeTd.className = 'px-4 py-3 text-gray-400';
+                typeTd.textContent = entry.is_dir ? 'Directory' : 'File';
+
+                const sizeTd = document.createElement('td');
+                sizeTd.className = 'px-4 py-3 text-gray-400';
+                sizeTd.innerHTML = entry.is_dir ? '<span class="text-green-400">-</span>' : formatSize(entry.size);
+
+                const mtimeTd = document.createElement('td');
+                mtimeTd.className = 'px-4 py-3 text-gray-400';
+                mtimeTd.textContent = new Date(entry.mtime * 1000).toLocaleString();
+
+                const actionsTd = document.createElement('td');
+                actionsTd.className = 'px-4 py-3';
+                if (entry.is_dir) {
+                    actionsTd.innerHTML = `
+                        <a href="/file-manager?path=${entry.path}" class="inline-flex items-center px-3 py-1.5 border border-gray-600 text-sm font-medium rounded-md text-gray-300 bg-gray-700 hover:bg-gray-600 mr-2">
+                            <i data-lucide="folder" class="w-4 h-4 mr-2"></i>
+                            Open
+                        </a>
+                        <button onclick="moveItem('${entry.name}')" class="inline-flex items-center px-3 py-1.5 border border-gray-600 text-sm font-medium rounded-md text-gray-300 bg-yellow-600 hover:bg-yellow-700 mr-2">
+                            <i data-lucide="corner-up-right" class="w-4 h-4 mr-2"></i>
+                            Move
+                        </button>
+                        <button onclick="deleteFile('${entry.name}')" class="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700">
+                            <i data-lucide="trash-2" class="w-4 h-4 mr-2"></i>
+                            Delete
+                        </button>
+                    `;
+                } else {
+                    actionsTd.innerHTML = `
+                        <button onclick="openFile('${entry.name}')" class="inline-flex items-center px-3 py-1.5 border border-gray-600 text-sm font-medium rounded-md text-gray-300 bg-gray-700 hover:bg-gray-600 mr-2">
+                            <i data-lucide="eye" class="w-4 h-4 mr-2"></i>
+                            Preview
+                        </button>
+                        <a href="/open/${entry.path}" target="_blank" class="inline-flex items-center px-3 py-1.5 border border-gray-600 text-sm font-medium rounded-md text-gray-300 bg-gray-700 hover:bg-gray-600 mr-2">
+                            <i data-lucide="external-link" class="w-4 h-4 mr-2"></i>
+                            Open
+                        </a>
+                        <a href="/download/${entry.path}" class="inline-flex items-center px-3 py-1.5 border border-gray-600 text-sm font-medium rounded-md text-gray-300 bg-gray-700 hover:bg-gray-600 mr-2">
+                            <i data-lucide="download" class="w-4 h-4 mr-2"></i>
+                            Download
+                        </a>
+                        <button onclick="moveItem('${entry.name}')" class="inline-flex items-center px-3 py-1.5 border border-gray-600 text-sm font-medium rounded-md text-gray-300 bg-yellow-600 hover:bg-yellow-700 mr-2">
+                            <i data-lucide="corner-up-right" class="w-4 h-4 mr-2"></i>
+                            Move
+                        </button>
+                        <button onclick="deleteFile('${entry.name}')" class="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700">
+                            <i data-lucide="trash-2" class="w-4 h-4 mr-2"></i>
+                            Delete
+                        </button>
+                    `;
+                }
+
+                tr.appendChild(checkboxTd);
+                tr.appendChild(typeTd);
+                tr.appendChild(sizeTd);
+                tr.appendChild(mtimeTd);
+                tr.appendChild(actionsTd);
+                tbody.appendChild(tr);
+            });
+
+            // Build grid
+            grid.innerHTML = '';
+            files.forEach(entry => {
+                const card = document.createElement('div');
+                card.className = 'bg-gray-700 rounded-lg p-4 hover:bg-gray-600 transition-colors';
+                const inner = document.createElement('div');
+                inner.className = 'flex flex-col items-center text-center';
+                inner.innerHTML = `
+                    <i data-lucide="${entry.is_dir ? 'folder' : 'file-text'}" class="file-icon mb-2"></i>
+                    <span class="font-medium text-sm mb-2 truncate w-full">${entry.name}</span>
+                    <div class="text-xs text-gray-400 mb-3">
+                        ${entry.is_dir ? 'Directory' : 'File'}
+                        ${entry.is_dir ? '' : '<br>' + formatSize(entry.size)}
+                    </div>
+                `;
+
+                if (entry.is_dir) {
+                    inner.innerHTML += `
+                        <div class="flex gap-1 w-full">
+                            <a href="/file-manager?path=${entry.path}" class="flex-1">
+                                <button class="w-full px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs">
+                                    <i data-lucide="folder" class="w-3 h-3 inline mr-1"></i>
+                                    Open
+                                </button>
+                            </a>
+                            <button onclick="moveItem('${entry.name}')" class="flex-1 px-2 py-1 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-xs">
+                                <i data-lucide="corner-up-right" class="w-3 h-3 inline mr-1"></i>
+                                Move
+                            </button>
+                        </div>
+                        <button onclick="deleteFile('${entry.name}')" class="w-full mt-2 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm">
+                            <i data-lucide="trash-2" class="w-4 h-4 inline mr-1"></i>
+                            Delete Folder
+                        </button>
+                    `;
+                } else {
+                    inner.innerHTML += `
+                        <div class="flex gap-1 w-full">
+                            <button onclick="openFile('${entry.name}')" class="flex-1 px-2 py-1 bg-gray-600 hover:bg-gray-500 text-white rounded text-xs">
+                                <i data-lucide="eye" class="w-3 h-3 inline mr-1"></i>
+                                Preview
+                            </button>
+                            <a href="/download/${entry.path}" class="flex-1 px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs">
+                                <i data-lucide="download" class="w-3 h-3 inline mr-1"></i>
+                                Download
+                            </a>
+                        </div>
+                        <div class="flex gap-1 mt-2">
+                            <button onclick="moveItem('${entry.name}')" class="flex-1 px-2 py-1 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-xs">
+                                <i data-lucide="corner-up-right" class="w-3 h-3 inline mr-1"></i>
+                                Move
+                            </button>
+                            <button onclick="deleteFile('${entry.name}')" class="flex-1 px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-xs">
+                                <i data-lucide="trash-2" class="w-4 h-4 inline mr-1"></i>
+                                Delete
+                            </button>
+                        </div>
+                    `;
+                }
+
+                card.appendChild(inner);
+                grid.appendChild(card);
+            });
+            // Render dynamic icons
+            lucide.createIcons();
+            // Ensure batch buttons reflect current selection
+            updateBatchButtons();
+        }
+
+        function formatSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+            return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+        }
+    </script>
+</body>
+</html>

@@ -7,28 +7,21 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/styles.css">
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #111827; /* Dark Gray */
-            color: #E5E7EB; /* Light Gray */
-        }
-        .stat-card, .link-card {
-            background-color: #1F2937; /* Darker Gray */
-            border: 1px solid #374151; /* Gray border */
-            border-radius: 0.75rem;
-            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
-        }
-        .stat-card:hover, .link-card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1);
-        }
+        /* Minor overrides for quick theming (kept small) */
+        :root{--bg:#0b1220;--muted:#9CA3AF}
+        body{background-color:var(--bg);color:#E5E7EB}
         .progress-bar-bg {
             background-color: #374151;
         }
         .progress-bar {
-            background-color: #3B82F6; /* Blue */
-            transition: width 0.5s ease-in-out;
+            background: linear-gradient(90deg, #3b82f6, #2563eb);
+        }
+        .stat-card {
+            background-color: #1F2937;
+            border: 1px solid #374151;
+            border-radius: 0.75rem;
         }
     </style>
 </head>
@@ -40,17 +33,32 @@
             <p class="text-gray-400 mt-2">Your personal network dashboard. Running on <span id="hostname" class="font-semibold text-blue-400">...</span> (<span id="ip-address" class="font-semibold text-blue-400">...</span>)</p>
         </header>
 
+        <!-- Flash messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            <div class="mb-4">
+              <ul>
+                {% for category, message in messages %}
+                  <li class="{{ category }}">{{ message }}</li>
+                {% endfor %}
+              </ul>
+            </div>
+          {% endif %}
+        {% endwith %}
+
         <!-- System Stats -->
-        <section class="mb-8">
-            <h2 class="text-2xl font-semibold mb-4 text-gray-200">System Status</h2>
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <section class="mb-8" aria-labelledby="system-status-heading">
+            <h2 id="system-status-heading" class="text-2xl font-semibold mb-4 text-gray-200">System Status</h2>
+            
+            <!-- Main Stats Grid -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                 <!-- CPU Usage -->
                 <div class="stat-card p-4">
                     <div class="flex items-center justify-between mb-2">
                         <h3 class="font-semibold">CPU Usage</h3>
                         <i data-lucide="cpu" class="w-6 h-6 text-gray-400"></i>
                     </div>
-                    <div class="text-3xl font-bold"><span id="cpu-usage">...</span>%</div>
+                    <div class="text-3xl font-bold"><span id="cpu-usage" role="status" aria-live="polite">...</span>%</div>
                     <div class="progress-bar-bg w-full h-2 rounded-full mt-2">
                         <div id="cpu-progress" class="progress-bar h-2 rounded-full" style="width: 0%;"></div>
                     </div>
@@ -92,11 +100,104 @@
                     <p class="text-sm text-gray-500 mt-2"><span id="disk-free">...</span> free of <span id="disk-total">...</span></p>
                 </div>
             </div>
+
+            <!-- Enhanced Details Section -->
+            <div class="grid grid-cols-1 gap-4 mb-6">
+                <!-- CPU Per Core -->
+                <div class="stat-card p-4">
+                    <h3 class="font-semibold mb-3">CPU Cores</h3>
+                    <div class="space-y-3">
+                        <!-- All cores in rows of 8 -->
+                        <div id="cpu-cores-container" class="grid grid-cols-8 gap-2">
+                            <!-- Dynamic CPU core bars -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Memory & System Info -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+                <!-- Memory Details -->
+                <div class="stat-card p-4">
+                    <h3 class="font-semibold mb-3">Memory Details</h3>
+                    <div class="space-y-3">
+                        <div>
+                            <div class="flex justify-between text-sm mb-1">
+                                <span class="text-gray-400">RAM Used</span>
+                                <span id="ram-used" class="font-semibold">...</span>
+                            </div>
+                            <div class="progress-bar-bg w-full h-2 rounded-full">
+                                <div id="ram-used-progress" class="progress-bar h-2 rounded-full" style="width: 0%;"></div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="flex justify-between text-sm mb-1">
+                                <span class="text-gray-400">RAM Free</span>
+                                <span id="ram-free-display" class="font-semibold">...</span>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="flex justify-between text-sm mb-1">
+                                <span class="text-gray-400">Swap Used</span>
+                                <span id="swap-used" class="font-semibold">...</span>
+                            </div>
+                            <div class="progress-bar-bg w-full h-2 rounded-full">
+                                <div id="swap-progress" class="progress-bar h-2 rounded-full" style="width: 0%;"></div>
+                            </div>
+                        </div>
+                        <div class="flex justify-between text-sm">
+                            <span class="text-gray-400">Swap Total</span>
+                            <span id="swap-total" class="font-semibold">...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- System Info -->
+                <div class="stat-card p-4">
+                    <h3 class="font-semibold mb-3">System Info</h3>
+                    <div class="space-y-2">
+                        <div class="flex justify-between">
+                            <span class="text-gray-400 text-sm">Uptime</span>
+                            <span id="uptime" class="font-semibold">...</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-400 text-sm">Processes</span>
+                            <span id="processes" class="font-semibold">...</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-400 text-sm">Disk Used</span>
+                            <span id="disk-used" class="font-semibold">...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Stats -->
+                <div class="stat-card p-4">
+                    <h3 class="font-semibold mb-3">Quick Stats</h3>
+                    <div class="space-y-2">
+                        <div class="flex justify-between">
+                            <span class="text-gray-400 text-sm">OS</span>
+                            <span id="os-display" class="font-semibold">...</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-400 text-sm">Kernel</span>
+                            <span id="kernel-display" class="font-semibold">...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </section>
 
         <!-- Quick Links -->
         <section>
             <h2 class="text-2xl font-semibold mb-4 text-gray-200">Quick Links</h2>
+
+            {% if setup_missing %}
+              <div class="mb-4 p-4 rounded shadow bg-yellow-100 text-yellow-900">
+                <strong>Setup not configured.</strong> You can <a class="underline text-blue-600" href="{{ url_for('setup.setup') }}">open the Setup page</a> to customize Quick Links and file storage.
+              </div>
+            {% endif %}
+
             <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
                 {% for link in quick_links %}
                 <a href="{{ link.url }}" target="_blank" rel="noopener noreferrer" class="link-card p-4 flex flex-col items-center justify-center text-center">
@@ -112,41 +213,173 @@
     <script>
         lucide.createIcons();
 
-        // --- Real-time Stats Update ---
-        function updateStats() {
-            fetch('/api/stats')
-                .then(response => response.json())
-                .then(data => {
-                    // Update header
-                    document.getElementById('hostname').innerText = data.hostname;
-                    document.getElementById('ip-address').innerText = data.ip_address;
+        // --- Real-time Stats Update (SSE with polling fallback) ---
+        let isUpdating = false;
+        let retryCount = 0;
+        const maxRetries = 3;
+        let pollingInterval = null;
+        let sse = null;
+        const POLL_INTERVAL_MS = 5000; // Polling fallback interval
 
-                    // Update CPU Usage
-                    document.getElementById('cpu-usage').innerText = data.cpu_usage.toFixed(1);
-                    document.getElementById('cpu-progress').style.width = data.cpu_usage + '%';
-
-                    // Update CPU Temp
-                    document.getElementById('cpu-temp').innerText = data.cpu_temp;
-
-                    // Update RAM Usage
-                    document.getElementById('ram-usage').innerText = data.ram_usage.toFixed(1);
-                    document.getElementById('ram-progress').style.width = data.ram_usage + '%';
-                    document.getElementById('ram-total').innerText = data.ram_total;
-
-                    // Update Disk Usage
-                    document.getElementById('disk-usage').innerText = data.disk_usage.toFixed(1);
-                    document.getElementById('disk-progress').style.width = data.disk_usage + '%';
-                    document.getElementById('disk-free').innerText = data.disk_free;
-                    document.getElementById('disk-total').innerText = data.disk_total;
-
-                })
-                .catch(error => console.error('Error fetching system stats:', error));
+        function showError(message) {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'fixed top-4 right-4 bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg z-50';
+            errorDiv.textContent = message;
+            document.body.appendChild(errorDiv);
+            setTimeout(() => errorDiv.remove(), 3000);
         }
 
-        // Fetch stats immediately on page load, then update every 1 second
-        document.addEventListener('DOMContentLoaded', function() {
+        function applyStats(data) {
+            // Update header
+            document.getElementById('hostname').innerText = data.hostname;
+            document.getElementById('ip-address').innerText = data.ip_address;
+
+            // Update CPU Usage
+            document.getElementById('cpu-usage').innerText = Number(data.cpu_usage).toFixed(1);
+            document.getElementById('cpu-progress').style.width = data.cpu_usage + '%';
+
+            // Update CPU Temp
+            document.getElementById('cpu-temp').innerText = data.cpu_temp;
+
+            // Update CPU Per Core
+            const coresContainer = document.getElementById('cpu-cores-container');
+            if (data.cpu_per_core && data.cpu_per_core.length > 0) {
+                coresContainer.innerHTML = data.cpu_per_core.map((usage, index) => {
+                    const color = usage > 80 ? 'bg-red-600' : usage > 50 ? 'bg-yellow-500' : 'bg-blue-500';
+                    return `
+                        <div class="flex flex-col items-stretch w-full">
+                            <div class="text-xs text-gray-400 mb-1 text-center">C${index}</div>
+                            <div class="progress-bar-bg w-full h-16 rounded-lg relative overflow-hidden">
+                                <div class="${color} h-full rounded-lg transition-all duration-300" style="width: ${usage}%;"></div>
+                            </div>
+                            <div class="text-xs font-semibold mt-1 text-center">${usage.toFixed(0)}%</div>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            // Update RAM Usage
+            document.getElementById('ram-usage').innerText = Number(data.ram_usage).toFixed(1);
+            document.getElementById('ram-progress').style.width = data.ram_usage + '%';
+            document.getElementById('ram-total').innerText = data.ram_total;
+            document.getElementById('ram-used').innerText = data.ram_used;
+            document.getElementById('ram-used-progress').style.width = data.ram_usage + '%';
+            document.getElementById('ram-free-display').innerText = data.ram_free;
+
+            // Update Swap
+            document.getElementById('swap-used').innerText = data.swap_used;
+            document.getElementById('swap-progress').style.width = data.swap_usage + '%';
+            document.getElementById('swap-total').innerText = data.swap_total;
+
+            // Update Disk Usage
+            document.getElementById('disk-usage').innerText = Number(data.disk_usage).toFixed(1);
+            document.getElementById('disk-progress').style.width = data.disk_usage + '%';
+            document.getElementById('disk-free').innerText = data.disk_free;
+            document.getElementById('disk-total').innerText = data.disk_total;
+            document.getElementById('disk-used').innerText = data.disk_used;
+
+            // Update System Info
+            document.getElementById('uptime').innerText = `${data.uptime_hours}h ${data.uptime_minutes}m`;
+            document.getElementById('processes').innerText = data.processes;
+            document.getElementById('os-display').innerText = data.os || 'N/A';
+            document.getElementById('kernel-display').innerText = data.kernel || 'N/A';
+        }
+
+        function updateStats() {
+            if (isUpdating) return;
+            isUpdating = true;
+
+            fetch('/api/stats')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    applyStats(data);
+                    retryCount = 0; // Reset retry count on success
+                })
+                .catch(error => {
+                    console.error('Error fetching system stats:', error);
+                    retryCount++;
+                    if (retryCount <= maxRetries) {
+                        showError(`Failed to update stats (attempt ${retryCount}/${maxRetries})`);
+                    }
+                })
+                .finally(() => {
+                    isUpdating = false;
+                });
+        }
+
+        function startPolling() {
+            if (pollingInterval) return;
             updateStats();
-            setInterval(updateStats, 1000);
+            pollingInterval = setInterval(updateStats, POLL_INTERVAL_MS);
+        }
+
+        function stopPolling() {
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+            }
+        }
+
+        function startSSE() {
+            if (!window.EventSource) return false;
+
+            try {
+                sse = new EventSource('/api/stats/stream');
+            } catch (e) {
+                console.warn('SSE not available, falling back to polling', e);
+                return false;
+            }
+
+            let connected = false;
+
+            sse.onopen = () => {
+                connected = true;
+                stopPolling();
+            };
+
+            sse.onmessage = (e) => {
+                try {
+                    const data = JSON.parse(e.data);
+                    applyStats(data);
+                } catch (err) {
+                    console.error('Failed to parse SSE data', err);
+                }
+            };
+
+            sse.onerror = (err) => {
+                console.warn('SSE connection error, falling back to polling', err);
+                if (sse) {
+                    sse.close();
+                    sse = null;
+                }
+                // If not successfully connected within a short window, start polling
+                startPolling();
+            };
+
+            // If SSE fails to connect within 3 seconds, fall back to polling
+            setTimeout(() => {
+                if (!connected) {
+                    if (sse) {
+                        try { sse.close(); } catch (e) {}
+                        sse = null;
+                    }
+                    startPolling();
+                }
+            }, 3000);
+
+            return true;
+        }
+
+        // Initialize: prefer SSE, otherwise fall back to polling
+        document.addEventListener('DOMContentLoaded', function() {
+            if (!startSSE()) {
+                startPolling();
+            }
         });
     </script>
 </body>

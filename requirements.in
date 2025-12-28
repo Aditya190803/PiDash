@@ -1,0 +1,7 @@
+Flask
+psutil
+gunicorn
+python-dotenv
+prometheus_client
+Flask-WTF
+Werkzeug<3.0.0

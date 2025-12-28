@@ -1,0 +1,49 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Test / coverage
+.pytest_cache/
+coverage.xml
+.coverage
+htmlcov/
+
+# Virtual environments
+venv/
+.env/
+env/
+.venv/
+
+# Packaging
+build/
+dist/
+*.egg-info/
+pip-wheel-metadata/
+*.egg
+
+# Editor/IDE
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Mypy, pylint, isort, etc.
+.mypy_cache/
+.pylint.d/
+*.pyre/
+
+# Docker
+docker-compose.override.yml
+*.log
+
+# Others
+instance/
+*.sqlite3
+
+
+.env.local

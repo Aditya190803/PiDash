@@ -1,0 +1,25 @@
+/* Minimal responsive + accessibility focused styles */
+:root{
+  --bg:#0b1220;
+  --card:#1f2937;
+  --muted:#9ca3af;
+}
+html,body{height:100%;margin:0}
+body{font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif;background:var(--bg);color:#E5E7EB}
+
+/* Utility: screen-reader only */
+.sr-only{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+/* Cards */
+.stat-card, .card, .link-card{background:var(--card);border:1px solid #374151;border-radius:.75rem}
+
+/* Make stat numbers scale on smaller screens */
+@media (max-width: 640px){
+  .text-3xl{font-size:1.5rem}
+}
+
+/* Ensure canvas fits container */
+#realtime-chart{width:100% !important;height:auto !important;max-height:240px}
+
+/* Accessible focus styles */
+:focus{outline:3px solid #2563EB;outline-offset:2px}

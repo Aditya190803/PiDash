@@ -9,8 +9,18 @@ services:
       - HOST=0.0.0.0
       - PORT=5001
       - UPLOAD_FOLDER=/data/lsfile
+      # Optional: pass host info into the container. Set these in your shell
+      # before running `docker-compose up` if you want the app to display the
+      # host's hostname/OS/kernel instead of the container's.
+      - HOST_HOSTNAME=${HOST_HOSTNAME:-}
+      - HOST_OS=${HOST_OS:-}
+      - HOST_KERNEL=${HOST_KERNEL:-}
     volumes:
       - ./lsfile:/data/lsfile
+      # Optional: mount host system info so the container can report real host
+      # values. These mounts are read-only and safe on Linux hosts.
+      - /etc/hostname:/host_etc/hostname:ro
+      - /etc/os-release:/host_etc/os-release:ro
     user: "1000:1000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5001/health"]

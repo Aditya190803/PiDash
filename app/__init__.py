@@ -190,9 +190,23 @@ def get_system_stats() -> Dict[str, Any]:
         uptime_minutes = int((uptime % 3600) // 60)
 
         # Derive OS & kernel info (try PRETTY_NAME from /etc/os-release)
+        # Prefer host-provided environment variables when present. This allows
+        # running inside containers while still reporting host info if the
+        # deployer explicitly passes it (via env vars or mounted files).
         try:
-            os_name = None
-            if os.path.exists("/etc/os-release"):
+            os_name = os.getenv("HOST_OS")
+            kernel = os.getenv("HOST_KERNEL")
+
+            # If not provided via env, try reading host /host_etc/os-release (if
+            # the host files are mounted there). Fall back to container
+            # /etc/os-release and finally to platform values.
+            if not os_name and os.path.exists("/host_etc/os-release"):
+                with open("/host_etc/os-release") as f:
+                    for line in f:
+                        if line.startswith("PRETTY_NAME="):
+                            os_name = line.strip().split("=", 1)[1].strip().strip('"')
+                            break
+            if not os_name and os.path.exists("/etc/os-release"):
                 with open("/etc/os-release") as f:
                     for line in f:
                         if line.startswith("PRETTY_NAME="):
@@ -200,13 +214,27 @@ def get_system_stats() -> Dict[str, Any]:
                             break
             if not os_name:
                 os_name = platform.system()
-            kernel = platform.release()
+            if not kernel:
+                kernel = platform.release()
         except Exception:
             os_name = platform.system()
             kernel = platform.release()
 
+        # Allow overriding hostname via env `HOST_HOSTNAME` or a mounted
+        # `/host_etc/hostname`. The order of precedence is: env var, mounted
+        # host file, container hostname.
+        hostname = os.getenv("HOST_HOSTNAME")
+        if not hostname and os.path.exists("/host_etc/hostname"):
+            try:
+                with open("/host_etc/hostname") as f:
+                    hostname = f.read().strip()
+            except Exception:
+                hostname = None
+        if not hostname:
+            hostname = socket.gethostname()
+
         stats = {
-            "hostname": socket.gethostname(),
+            "hostname": hostname,
             "ip_address": get_ip_address(),
             "os": os_name,
             "kernel": kernel,

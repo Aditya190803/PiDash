@@ -8,9 +8,12 @@ WORKDIR /app
 COPY requirements.txt .
 
 # install build deps required for packages like psutil
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential gcc python3-dev libffi-dev libssl-dev curl && \
-    rm -rf /var/lib/apt/lists/*
+# use BuildKit cache mounts for apt to avoid re-downloading packages between builds
+RUN --mount=type=cache,target=/var/cache/apt/archives \
+  --mount=type=cache,target=/var/lib/apt/lists \
+  apt-get update && apt-get install -y --no-install-recommends \
+  gcc make python3-dev libffi-dev libssl-dev curl && \
+  rm -rf /var/lib/apt/lists/*
 
 # Build wheels (cached by BuildKit) and install into a virtualenv
 RUN --mount=type=cache,target=/root/.cache/pip \
@@ -27,8 +30,10 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # Install only small runtime deps (curl for healthcheck)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=cache,target=/var/cache/apt/archives \
+  --mount=type=cache,target=/var/lib/apt/lists \
+  apt-get update && apt-get install -y --no-install-recommends \
+  curl && rm -rf /var/lib/apt/lists/*
 
 # Copy virtualenv from builder
 COPY --from=builder /opt/venv /opt/venv

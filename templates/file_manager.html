@@ -316,7 +316,7 @@
                 </div>
                 <div class="flex justify-end gap-2">
                     <button type="button" id="cancel-new-item" class="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded">Cancel</button>
-                    <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded">Create</button>
+                    <button type="submit" id="create-item-btn" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded" disabled>Create</button>
                 </div>
             </form>
         </div>
@@ -526,6 +526,8 @@
             document.getElementById('new-item-name').placeholder = type === 'file' ? 'filename.txt' : 'foldername';
             document.getElementById('new-item-name').value = '';
             validateNewItemName();
+            // Focus input for convenience
+            setTimeout(() => document.getElementById('new-item-name').focus(), 50);
             newItemModal.classList.remove('hidden');
         }
 
@@ -541,16 +543,17 @@
             try {
                 const response = await fetch('/api/create', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('input[name="csrf_token"]').value },
                     body: JSON.stringify(payload)
                 });
                 
+                const result = await response.json().catch(() => ({}));
                 if (response.ok) {
-                    showSuccess('Item created successfully');
+                    showSuccess(result.message || 'Item created successfully');
                     newItemModal.classList.add('hidden');
                     loadFiles();
                 } else {
-                    showError('Creation failed');
+                    showError(result.error || 'Creation failed');
                 }
             } catch (error) {
                 console.error('Creation error:', error);
